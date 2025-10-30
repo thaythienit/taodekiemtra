@@ -160,6 +160,14 @@ export const generateMatrixFromGemini = async (formData: FormData): Promise<Test
     Môn học: ${formData.subject}
     
     Bối cảnh: Nội dung được trích từ một file sách giáo khoa, có thể bao gồm cả văn bản và hình ảnh. Bạn cần phân tích cả hai để hiểu toàn bộ ngữ cảnh.
+    
+    Nội dung chính từ sách giáo khoa để phân tích:
+    ---
+    (Văn bản)
+    ${formData.fileContent}
+    ---
+    (Các hình ảnh liên quan cũng được cung cấp. Hãy phân tích chúng cùng với văn bản.)
+
     Các bài học cần tạo đề và phạm vi trang tương ứng trong tài liệu:
     ${topicsWithPages}
 
