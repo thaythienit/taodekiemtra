@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useEffect } from 'react';
 import * as pdfjs from 'pdfjs-dist';
 import type { FormData, GeneratedTest, TestMatrix, SavedTest, TestSolution } from './types.ts';
@@ -28,8 +29,8 @@ const App: React.FC = () => {
     recognitionRatio: 30,
     comprehensionRatio: 40,
     applicationRatio: 30,
-    fileContent: '',
-    fileImages: [],
+    fileContent: '', // Now used as a placeholder/flag
+    fileImages: [],    // No longer used to store all images
     lessonTopics: [{ id: Date.now().toString(), name: '', startPage: 1, endPage: 1 }],
     timeLimit: 40,
     mcqTypes: {
@@ -39,6 +40,8 @@ const App: React.FC = () => {
       fillBlank: false,
     },
   });
+
+  const [perPageContent, setPerPageContent] = useState<{ text: string; image: string }[]>([]);
   
   const [testMatrix, setTestMatrix] = useState<TestMatrix | null>(null);
   const [generatedTest, setGeneratedTest] = useState<GeneratedTest | null>(null);
@@ -64,24 +67,19 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      // If there's a generated test, there are unsaved changes.
       if (generatedTest) {
-        // Standard way to trigger the browser's confirmation dialog.
         event.preventDefault();
-        // This is required for some browsers. The actual message is controlled by the browser.
         event.returnValue = 'Bạn có chắc chắn muốn rời đi? Các thay đổi chưa được lưu sẽ bị mất.';
       }
     };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
 
-    // Cleanup the event listener when the component unmounts
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, [generatedTest]); // Dependency array ensures the listener knows about the current state of generatedTest
+  }, [generatedTest]);
 
-  // Effect for simulating loading progress
   useEffect(() => {
     let interval: number;
     if (isMatrixLoading || isTestLoading) {
@@ -90,7 +88,7 @@ const App: React.FC = () => {
       interval = window.setInterval(() => {
         currentProgress += Math.random() * 10;
         if (currentProgress > 95) {
-          currentProgress = 95; // Cap at 95% until completion
+          currentProgress = 95;
         }
         setLoadingProgress(currentProgress);
       }, 500);
@@ -119,18 +117,18 @@ const App: React.FC = () => {
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
 
-    // Reset state for new file selection
     setUploadedFileName(null);
+    setPerPageContent([]);
     setFormData(prev => ({ ...prev, fileContent: '', fileImages: [] }));
     setError(null);
     if (!e.target.files || e.target.files.length === 0) {
-      return; // No file selected or selection was cancelled
+      return;
     }
 
     if (file) {
       if (file.type !== 'application/pdf') {
         setError('Lỗi: Vui lòng chỉ tải lên file có định dạng .pdf.');
-        e.target.value = ''; // Reset file input
+        e.target.value = '';
         return;
       }
       
@@ -148,12 +146,10 @@ const App: React.FC = () => {
         for (let i = 1; i <= pdf.numPages; i++) {
           const page = await pdf.getPage(i);
           
-          // Extract text
           const textContent = await page.getTextContent();
           
-          // More robust text extraction
           let lastY, text = '';
-          textContent.items.sort((a, b) => { // Sort items by vertical, then horizontal position
+          textContent.items.sort((a, b) => {
               if ('transform' in a && 'transform' in b) {
                   if (a.transform[5] > b.transform[5]) return -1;
                   if (a.transform[5] < b.transform[5]) return 1;
@@ -166,41 +162,43 @@ const App: React.FC = () => {
           for (let item of textContent.items) {
               if ('str' in item) {
                   if (lastY !== undefined && lastY !== item.transform[5]) {
-                      text += '\n'; // New line
+                      text += '\n';
                   }
                   text += item.str;
                   if (lastY !== undefined && lastY === item.transform[5]) {
-                    text += ' '; // Add space for items on the same line.
+                    text += ' ';
                   }
                   lastY = item.transform[5];
               }
           }
           textItems.push(text);
 
-          // Extract image by rendering page
           if (context) {
             const viewport = page.getViewport({ scale: 1.5 });
             canvas.height = viewport.height;
             canvas.width = viewport.width;
 
-            // FIX: The type definition for 'RenderParameters' requires the 'canvas' property.
             await page.render({ canvasContext: context, viewport: viewport, canvas } as any).promise;
-            // Get image as base64 and remove the data URL prefix
             const imageDataUrl = canvas.toDataURL('image/jpeg', 0.8);
             imageItems.push(imageDataUrl.split(',')[1]);
           }
         }
         
-        canvas.remove(); // Clean up canvas element
+        canvas.remove();
 
-        const fullText = textItems.join('\n\n');
+        const pageContents = textItems.map((text, index) => ({
+            text,
+            image: imageItems[index],
+        }));
+        setPerPageContent(pageContents);
+
+        // Update formData for validation purposes without storing large data
+        setFormData(prev => ({ ...prev, fileContent: file.name, fileImages: [] }));
         
-        setFormData(prev => ({ ...prev, fileContent: fullText, fileImages: imageItems }));
-
-        if (fullText.trim() === '' && imageItems.length === 0) {
+        if (pageContents.length === 0 || pageContents.every(p => p.text.trim() === '' && !p.image)) {
           setError("Lỗi: Không tìm thấy nội dung văn bản hoặc hình ảnh nào trong file PDF.");
         } else {
-          setError(null); // Clear previous errors if content is found
+          setError(null);
         }
 
       } catch (err) {
@@ -225,9 +223,51 @@ const App: React.FC = () => {
       setIsMatrixLoading(false);
       return;
     }
+
+    const relevantPages = new Set<number>();
+    formData.lessonTopics.forEach(topic => {
+        if (topic.startPage && topic.endPage && topic.endPage >= topic.startPage) {
+            for (let i = topic.startPage; i <= topic.endPage; i++) {
+                relevantPages.add(i);
+            }
+        }
+    });
+
+    if (relevantPages.size === 0) {
+        setError('Vui lòng nhập số trang hợp lệ cho ít nhất một bài học.');
+        setIsMatrixLoading(false);
+        return;
+    }
+
+    let relevantText = `Bối cảnh: Nội dung sau được trích xuất từ các trang có liên quan trong tài liệu học liệu.\n`;
+    const relevantImages: string[] = [];
+    const sortedPages = Array.from(relevantPages).sort((a, b) => a - b);
+
+    for (const pageNum of sortedPages) {
+        const pageIndex = pageNum - 1;
+        if (pageIndex >= 0 && pageIndex < perPageContent.length) {
+            const content = perPageContent[pageIndex];
+            relevantText += `\n--- NỘI DUNG TRANG ${pageNum} ---\n${content.text}`;
+            if (content.image) {
+                relevantImages.push(content.image);
+            }
+        }
+    }
+
+    if (relevantText.trim() === '') {
+        setError('Không tìm thấy nội dung cho các trang đã chọn. Vui lòng kiểm tra lại số trang.');
+        setIsMatrixLoading(false);
+        return;
+    }
+    
+    const payload: FormData = {
+        ...formData,
+        fileContent: relevantText,
+        fileImages: relevantImages,
+    };
     
     try {
-      const matrixData = await generateMatrixFromGemini(formData);
+      const matrixData = await generateMatrixFromGemini(payload);
       setTestMatrix(matrixData);
       setLoadingProgress(100);
     } catch (err: unknown) {
@@ -239,7 +279,7 @@ const App: React.FC = () => {
     } finally {
       setIsMatrixLoading(false);
     }
-  }, [formData]);
+  }, [formData, perPageContent]);
 
   const handleGenerateTest = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
@@ -252,8 +292,38 @@ const App: React.FC = () => {
     setGeneratedTest(null);
     setSolutionData(null);
     
+    const relevantPages = new Set<number>();
+    formData.lessonTopics.forEach(topic => {
+        if (topic.startPage && topic.endPage && topic.endPage >= topic.startPage) {
+            for (let i = topic.startPage; i <= topic.endPage; i++) {
+                relevantPages.add(i);
+            }
+        }
+    });
+
+    let relevantText = `Bối cảnh: Nội dung sau được trích xuất từ các trang có liên quan trong tài liệu học liệu.\n`;
+    const relevantImages: string[] = [];
+    const sortedPages = Array.from(relevantPages).sort((a, b) => a - b);
+
+    for (const pageNum of sortedPages) {
+        const pageIndex = pageNum - 1;
+        if (pageIndex >= 0 && pageIndex < perPageContent.length) {
+            const content = perPageContent[pageIndex];
+            relevantText += `\n--- NỘI DUNG TRANG ${pageNum} ---\n${content.text}`;
+            if (content.image) {
+                relevantImages.push(content.image);
+            }
+        }
+    }
+
+    const payload: FormData = {
+        ...formData,
+        fileContent: relevantText,
+        fileImages: relevantImages,
+    };
+
     try {
-      const testData = await generateTestFromGemini(formData, testMatrix);
+      const testData = await generateTestFromGemini(payload, testMatrix);
       setGeneratedTest(testData);
       setLoadingProgress(100);
     } catch (err: unknown) {
@@ -265,7 +335,7 @@ const App: React.FC = () => {
     } finally {
       setIsTestLoading(false);
     }
-  }, [formData, testMatrix]);
+  }, [formData, testMatrix, perPageContent]);
 
   const handleGenerateSolution = useCallback(async () => {
     if (!generatedTest) return;
@@ -291,21 +361,19 @@ const App: React.FC = () => {
   const handleSaveTest = useCallback(() => {
     if (!generatedTest) return;
 
-    // Create a copy of formData and remove the large fields before saving to prevent quota issues.
     const formDataToSave = { ...formData };
-    formDataToSave.fileContent = ''; // Clear the large text content.
-    formDataToSave.fileImages = [];   // Clear the large image array.
+    formDataToSave.fileContent = '';
+    formDataToSave.fileImages = [];
 
     const newSavedTest: SavedTest = {
       id: Date.now().toString(),
       name: `Đề ${formData.subject} - ${new Date().toLocaleString('vi-VN')}`,
       createdAt: new Date().toISOString(),
       testData: generatedTest,
-      formData: formDataToSave, // Use the sanitized, smaller version of formData
+      formData: formDataToSave,
     };
     
     updateSavedTests([newSavedTest, ...savedTests]);
-    // Do not show alert if there was an error saving
     if(!error) {
         alert("Đã lưu đề kiểm tra thành công!");
     }
@@ -317,10 +385,10 @@ const App: React.FC = () => {
       setFormData(testToLoad.formData);
       setGeneratedTest(testToLoad.testData);
       setTestMatrix(null);
-      setSolutionData(null); // Clear solution when loading an old test
+      setSolutionData(null);
       setError(null);
-      setUploadedFileName(null); // Clear file name as content is not loaded
-      // Scroll to the generated test for better UX
+      setUploadedFileName(null);
+      setPerPageContent([]); // Clear page content as it's not saved
       setTimeout(() => {
           const generatedTestElement = document.getElementById('generated-test-section');
           if (generatedTestElement) {
