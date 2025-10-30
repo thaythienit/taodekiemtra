@@ -1,15 +1,15 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import * as pdfjs from 'pdfjs-dist';
-import type { FormData, GeneratedTest, TestMatrix, SavedTest, TestSolution } from './types';
-import Header from './components/Header';
-import FormSection from './components/FormSection';
-import GeneratedTestComponent from './components/GeneratedTest';
-import TestMatrixComponent from './components/TestMatrixComponent';
-import SavedTestsList from './components/SavedTestsList';
-import SolutionComponent from './components/SolutionComponent';
-import { generateMatrixFromGemini, generateTestFromGemini, generateSolutionFromGemini } from './services/geminiService';
-import { exportTestToDocx, exportTestWithSolutionToDocx } from './services/docxService';
-import ProgressBar from './components/ProgressBar';
+import type { FormData, GeneratedTest, TestMatrix, SavedTest, TestSolution } from './types.ts';
+import Header from './components/Header.tsx';
+import FormSection from './components/FormSection.tsx';
+import GeneratedTestComponent from './components/GeneratedTest.tsx';
+import TestMatrixComponent from './components/TestMatrixComponent.tsx';
+import SavedTestsList from './components/SavedTestsList.tsx';
+import SolutionComponent from './components/SolutionComponent.tsx';
+import { generateMatrixFromGemini, generateTestFromGemini, generateSolutionFromGemini } from './services/geminiService.ts';
+import { exportTestToDocx, exportTestWithSolutionToDocx } from './services/docxService.ts';
+import ProgressBar from './components/ProgressBar.tsx';
 
 
 // Configure the PDF.js worker from a CDN
