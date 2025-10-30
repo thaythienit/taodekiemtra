@@ -174,7 +174,7 @@ const App: React.FC = () => {
           textItems.push(text);
 
           if (context) {
-            const viewport = page.getViewport({ scale: 1.5 });
+            const viewport = page.getViewport({ scale: 1.0 });
             canvas.height = viewport.height;
             canvas.width = viewport.width;
 
